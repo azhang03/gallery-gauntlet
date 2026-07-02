@@ -1,6 +1,13 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
+const { pathToFileURL } = require('node:url');
+
+// Register the custom scheme used to serve local image files to the sandboxed
+// renderer (Chromium blocks file:// from the app origin). Must run before app ready.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'gg', privileges: { standard: true, secure: true, stream: true } },
+]);
 
 // --- IPC ---
 // All privileged work (native dialog, filesystem) lives in the main process and
@@ -57,6 +64,13 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // Serve local files to the renderer via gg://img/?path=<absolute path>.
+  protocol.handle('gg', (request) => {
+    const target = new URL(request.url).searchParams.get('path');
+    if (!target) return new Response('missing path', { status: 400 });
+    return net.fetch(pathToFileURL(target).href);
+  });
+
   createWindow();
 
   // macOS: re-create a window when the dock icon is clicked and none are open.

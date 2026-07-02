@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' gg:" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>gallery-gauntlet</title>
     <link rel="stylesheet" href="styles.css" />
@@ -18,7 +18,7 @@
       <p id="empty" class="empty">Open a folder to start sorting.</p>
 
       <div id="file-view" class="file-view" hidden>
-        <!-- Batch 3 will render the image / file icon above the name. -->
+        <div id="file-display" class="file-display"></div>
         <div id="file-name" class="file-name"></div>
       </div>
     </main>

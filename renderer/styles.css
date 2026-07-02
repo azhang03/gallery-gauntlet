@@ -71,7 +71,44 @@ body {
   font-size: 1.1rem;
 }
 
+/* Media area + caption. */
+.file-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.file-display img {
+  max-width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  display: block;
+}
+
+.file-icon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  color: #6a6a6a;
+}
+
+.file-icon__glyph {
+  width: 96px;
+  height: 96px;
+}
+
+.file-icon__ext {
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 0.8rem;
+  letter-spacing: 1px;
+  color: #9a9a9a;
+}
+
+/* Filename caption under the media (subscript-style). */
 .file-name {
-  font-size: 1.6rem;
+  margin-top: 0.9rem;
+  font-size: 0.95rem;
+  color: #9a9a9a;
   word-break: break-all;
 }
