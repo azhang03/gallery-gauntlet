@@ -1,5 +1,43 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('node:path');
+const fs = require('node:fs/promises');
+
+// --- IPC ---
+// All privileged work (native dialog, filesystem) lives in the main process and
+// is reached from the renderer only through the contextBridge preload.
+
+// Open a native folder picker. Resolves to the chosen absolute path, or null if canceled.
+ipcMain.handle('dialog:pickFolder', async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
+// List the top-level files in a folder (skips subdirectories/symlinks).
+// Returns [{ name, path, ext, mtimeMs, size }]. ext/mtimeMs/size are unused in
+// Batch 2 but pre-wire Batch 3 (render by ext) and Batch 4 (sort by mtime).
+ipcMain.handle('files:list', async (event, folderPath) => {
+  const entries = await fs.readdir(folderPath, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const fullPath = path.join(folderPath, entry.name);
+    try {
+      const stats = await fs.stat(fullPath);
+      files.push({
+        name: entry.name,
+        path: fullPath,
+        ext: path.extname(entry.name).toLowerCase(),
+        mtimeMs: stats.mtimeMs,
+        size: stats.size,
+      });
+    } catch {
+      // Skip files we can't stat (permissions, or removed out from under us).
+    }
+  }
+  return files;
+});
 
 function createWindow() {
   const win = new BrowserWindow({

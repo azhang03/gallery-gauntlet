@@ -1,11 +1,10 @@
-const { contextBridge } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 
-// The single, safe surface the renderer can see. Later milestones extend this
-// object with IPC-backed methods (folder picker, file listing, move, etc.).
+// The single, safe surface the renderer can see. Main-process privileged work
+// (native dialog, filesystem) is reached only through these IPC-backed methods.
 contextBridge.exposeInMainWorld('galleryGauntlet', {
-  versions: {
-    node: process.versions.node,
-    chrome: process.versions.chrome,
-    electron: process.versions.electron,
-  },
+  // Opens a native folder picker; resolves to the chosen absolute path, or null if canceled.
+  pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
+  // Lists top-level files in a folder: [{ name, path, ext, mtimeMs, size }].
+  listFiles: (folderPath) => ipcRenderer.invoke('files:list', folderPath),
 });

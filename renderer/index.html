@@ -8,12 +8,21 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <main class="scaffold">
-      <h1>gallery-gauntlet</h1>
-      <p class="tagline">PC photo Tinder — sort, delete, or keep.</p>
-      <p class="status" id="status">Renderer loading…</p>
-      <ul class="versions" id="versions"></ul>
+    <header class="topbar">
+      <button id="open-btn" type="button" class="btn">Open Folder</button>
+      <span id="folder-path" class="folder-path">No folder selected</span>
+      <span id="position" class="position"></span>
+    </header>
+
+    <main class="viewer">
+      <p id="empty" class="empty">Open a folder to start sorting.</p>
+
+      <div id="file-view" class="file-view" hidden>
+        <!-- Batch 3 will render the image / file icon above the name. -->
+        <div id="file-name" class="file-name"></div>
+      </div>
     </main>
+
     <script src="renderer.js"></script>
   </body>
 </html>
