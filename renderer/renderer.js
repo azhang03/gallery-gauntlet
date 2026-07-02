@@ -2,6 +2,7 @@
 const api = window.galleryGauntlet;
 
 const openBtn = document.getElementById('open-btn');
+const sortSelect = document.getElementById('sort-select');
 const muteBtn = document.getElementById('mute-btn');
 const folderPathEl = document.getElementById('folder-path');
 const positionEl = document.getElementById('position');
@@ -22,9 +23,30 @@ let files = [];
 let index = 0;
 let folder = null;
 let isMuted = false; // persists across videos for the session
+let sortMode = 'date-desc'; // 'date-desc' | 'date-asc' | 'random'
 
 openBtn.addEventListener('click', openFolder);
 muteBtn.addEventListener('click', toggleMute);
+sortSelect.addEventListener('change', () => {
+  sortMode = sortSelect.value;
+  sortFiles();
+  index = 0;
+  render();
+});
+
+// Reorder `files` in place per the current sort mode.
+function sortFiles() {
+  if (sortMode === 'date-asc') {
+    files.sort((a, b) => a.mtimeMs - b.mtimeMs);
+  } else if (sortMode === 'date-desc') {
+    files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  } else if (sortMode === 'random') {
+    for (let i = files.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [files[i], files[j]] = [files[j], files[i]];
+    }
+  }
+}
 
 async function openFolder() {
   const picked = await api.pickFolder();
@@ -43,6 +65,7 @@ async function loadFolder(folderPath) {
     showEmpty(`Could not read folder: ${err.message}`);
     return;
   }
+  sortFiles();
   index = 0;
   render();
 }
