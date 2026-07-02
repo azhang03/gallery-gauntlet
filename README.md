@@ -1,2 +1,2 @@
 # gallery gauntlet
-Swipe left to sort/delete a photo, swipe right to keep it
+Quick keybind through your gallery to sort, delete, or keep your photos.
