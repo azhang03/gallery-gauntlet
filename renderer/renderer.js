@@ -1,7 +1,8 @@
-// Batch 3: open a folder, list its files, and render each one (image or file icon).
+// Batch 3b: open a folder, list files, and render each one — image, video, or file icon.
 const api = window.galleryGauntlet;
 
 const openBtn = document.getElementById('open-btn');
+const muteBtn = document.getElementById('mute-btn');
 const folderPathEl = document.getElementById('folder-path');
 const positionEl = document.getElementById('position');
 const emptyEl = document.getElementById('empty');
@@ -9,18 +10,21 @@ const fileViewEl = document.getElementById('file-view');
 const fileDisplayEl = document.getElementById('file-display');
 const fileNameEl = document.getElementById('file-name');
 
-// Extensions Chromium can render inline. Everything else (HEIC, RAW, docs, video…)
-// falls back to a generic file icon.
+// Extensions Chromium can render inline as images.
 const IMAGE_EXTS = new Set([
   '.jpg', '.jpeg', '.jfif', '.png', '.apng', '.gif',
   '.webp', '.bmp', '.svg', '.avif', '.ico',
 ]);
+// Video formats Electron/Chromium can decode. Others fall back to the file icon.
+const VIDEO_EXTS = new Set(['.mp4', '.m4v', '.webm', '.ogv', '.mov']);
 
 let files = [];
 let index = 0;
 let folder = null;
+let isMuted = false; // persists across videos for the session
 
 openBtn.addEventListener('click', openFolder);
+muteBtn.addEventListener('click', toggleMute);
 
 async function openFolder() {
   const picked = await api.pickFolder();
@@ -44,10 +48,19 @@ async function loadFolder(folderPath) {
 }
 
 function showEmpty(message) {
+  clearDisplay();
   fileViewEl.hidden = true;
   emptyEl.hidden = false;
   emptyEl.textContent = message;
   positionEl.textContent = '';
+  muteBtn.hidden = true;
+}
+
+// Remove current media, pausing any playing <video> so its audio stops immediately.
+function clearDisplay() {
+  const video = fileDisplayEl.querySelector('video');
+  if (video) video.pause();
+  fileDisplayEl.replaceChildren();
 }
 
 function render() {
@@ -60,23 +73,51 @@ function render() {
   fileViewEl.hidden = false;
 
   const file = files[index];
-  fileDisplayEl.replaceChildren();
+  clearDisplay();
+
+  const isVideo = VIDEO_EXTS.has(file.ext);
+  muteBtn.hidden = !isVideo;
 
   if (IMAGE_EXTS.has(file.ext)) {
     const img = document.createElement('img');
     img.alt = file.name;
-    img.src = `gg://img/?path=${encodeURIComponent(file.path)}`;
-    // If the bytes can't actually be decoded, fall back to the generic icon.
+    img.src = mediaUrl(file);
+    // If the bytes can't be decoded, fall back to the generic icon.
     img.addEventListener('error', () => {
       fileDisplayEl.replaceChildren(makeIcon(file));
     });
     fileDisplayEl.appendChild(img);
+  } else if (isVideo) {
+    const video = document.createElement('video');
+    video.src = mediaUrl(file);
+    video.controls = true;
+    video.autoplay = true;
+    video.muted = isMuted;
+    // Undecodable video (e.g. an HEVC clip with no OS decoder) → show a clear message.
+    video.addEventListener('error', () => {
+      muteBtn.hidden = true;
+      showUnplayable(file);
+    });
+    fileDisplayEl.appendChild(video);
   } else {
     fileDisplayEl.appendChild(makeIcon(file));
   }
 
   fileNameEl.textContent = file.name;
   positionEl.textContent = `${index + 1} / ${files.length}`;
+}
+
+function mediaUrl(file) {
+  return `gg://media/?path=${encodeURIComponent(file.path)}`;
+}
+
+function toggleMute() {
+  isMuted = !isMuted;
+  muteBtn.textContent = isMuted ? '🔇' : '🔊';
+  muteBtn.setAttribute('aria-label', isMuted ? 'Unmute videos' : 'Mute videos');
+  muteBtn.title = isMuted ? 'Unmute videos' : 'Mute videos';
+  const video = fileDisplayEl.querySelector('video');
+  if (video) video.muted = isMuted;
 }
 
 // A generic document icon with the file's extension labeled on it.
@@ -104,6 +145,18 @@ function makeIcon(file) {
   wrap.appendChild(label);
 
   return wrap;
+}
+
+// Shown when a video file can't be decoded (unsupported codec / no OS decoder).
+function showUnplayable(file) {
+  const wrap = document.createElement('div');
+  wrap.className = 'unplayable';
+  wrap.appendChild(makeIcon(file));
+  const note = document.createElement('div');
+  note.className = 'unplayable-note';
+  note.textContent = "Can't play this video — unsupported codec.";
+  wrap.appendChild(note);
+  fileDisplayEl.replaceChildren(wrap);
 }
 
 // Arrow keys step through the files, clamped at both ends (no wrap-around).

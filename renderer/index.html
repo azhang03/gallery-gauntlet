@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' gg:" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' gg:; media-src 'self' gg:" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>gallery-gauntlet</title>
     <link rel="stylesheet" href="styles.css" />
@@ -12,6 +12,8 @@
       <button id="open-btn" type="button" class="btn">Open Folder</button>
       <span id="folder-path" class="folder-path">No folder selected</span>
       <span id="position" class="position"></span>
+      <button id="mute-btn" type="button" class="btn btn-icon" hidden
+              title="Mute videos" aria-label="Mute videos">🔊</button>
     </header>
 
     <main class="viewer">

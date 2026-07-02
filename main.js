@@ -1,13 +1,90 @@
-const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
-const { pathToFileURL } = require('node:url');
+const { createReadStream } = require('node:fs');
+const { Readable } = require('node:stream');
 
-// Register the custom scheme used to serve local image files to the sandboxed
+// Enable platform HEVC/H.265 decoding where the OS provides it (phone videos are
+// frequently HEVC). Harmless if unavailable. Must be set before app is ready.
+app.commandLine.appendSwitch('enable-features', 'PlatformHEVCDecoderSupport');
+
+// Register the custom scheme used to serve local media files to the sandboxed
 // renderer (Chromium blocks file:// from the app origin). Must run before app ready.
 protocol.registerSchemesAsPrivileged([
   { scheme: 'gg', privileges: { standard: true, secure: true, stream: true } },
 ]);
+
+// Ext -> MIME for the files we serve over gg:// (images + video). Video needs a
+// correct type to play; SVG needs image/svg+xml to render in <img>.
+const MIME_TYPES = {
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.jfif': 'image/jpeg',
+  '.png': 'image/png', '.apng': 'image/apng', '.gif': 'image/gif',
+  '.webp': 'image/webp', '.bmp': 'image/bmp', '.svg': 'image/svg+xml',
+  '.avif': 'image/avif', '.ico': 'image/x-icon',
+  '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.webm': 'video/webm',
+  '.ogv': 'video/ogg', '.mov': 'video/quicktime',
+};
+
+function mimeFor(filePath) {
+  return MIME_TYPES[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
+}
+
+// Serve a local file to the renderer with HTTP Range support so <video> can seek.
+// Images return the whole file (200); ranged requests return 206 partial content.
+async function serveLocalFile(request) {
+  const target = new URL(request.url).searchParams.get('path');
+  if (!target) return new Response('missing path', { status: 400 });
+
+  let size;
+  try {
+    const stats = await fs.stat(target);
+    if (!stats.isFile()) return new Response('not a file', { status: 404 });
+    size = stats.size;
+  } catch {
+    return new Response('not found', { status: 404 });
+  }
+
+  const type = mimeFor(target);
+  const range = request.headers.get('range');
+  const match = range && /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+
+  if (match) {
+    let start;
+    let end;
+    if (match[1] === '' && match[2] !== '') {
+      start = Math.max(0, size - parseInt(match[2], 10)); // suffix: last N bytes
+      end = size - 1;
+    } else {
+      start = match[1] === '' ? 0 : parseInt(match[1], 10);
+      end = match[2] === '' ? size - 1 : parseInt(match[2], 10);
+    }
+    if (start > end || start >= size) {
+      return new Response('range not satisfiable', {
+        status: 416,
+        headers: { 'Content-Range': `bytes */${size}` },
+      });
+    }
+    end = Math.min(end, size - 1);
+    return new Response(Readable.toWeb(createReadStream(target, { start, end })), {
+      status: 206,
+      headers: {
+        'Content-Type': type,
+        'Content-Range': `bytes ${start}-${end}/${size}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': String(end - start + 1),
+      },
+    });
+  }
+
+  return new Response(Readable.toWeb(createReadStream(target)), {
+    status: 200,
+    headers: {
+      'Content-Type': type,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': String(size),
+    },
+  });
+}
 
 // --- IPC ---
 // All privileged work (native dialog, filesystem) lives in the main process and
@@ -57,6 +134,8 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // Let videos autoplay with sound without a user gesture (desktop app).
+      autoplayPolicy: 'no-user-gesture-required',
     },
   });
 
@@ -64,12 +143,8 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  // Serve local files to the renderer via gg://img/?path=<absolute path>.
-  protocol.handle('gg', (request) => {
-    const target = new URL(request.url).searchParams.get('path');
-    if (!target) return new Response('missing path', { status: 400 });
-    return net.fetch(pathToFileURL(target).href);
-  });
+  // Serve local files (images + video, with Range support) via gg://<host>/?path=…
+  protocol.handle('gg', serveLocalFile);
 
   createWindow();
 
