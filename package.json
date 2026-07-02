@@ -1,0 +1,15 @@
+{
+  "name": "gallery-gauntlet",
+  "version": "0.1.0",
+  "description": "PC photo Tinder — quick keybind through your gallery to sort, delete, or keep your photos.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron ."
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^43.0.0"
+  }
+}

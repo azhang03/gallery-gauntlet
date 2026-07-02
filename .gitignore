@@ -1,0 +1,19 @@
+# Node / build output
+node_modules/
+dist/
+
+# Planning, notes, and Claude's working memory — kept local, never pushed
+docs/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
