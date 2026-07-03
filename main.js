@@ -123,6 +123,28 @@ ipcMain.handle('files:list', async (event, folderPath) => {
   return files;
 });
 
+// Persisted app config (key bindings, settings) as JSON in userData. Used from
+// Batch 5 on; kept generic so later batches can store more (sorted state, last folder).
+const CONFIG_DEFAULTS = { keepKey: 'k', bindings: [] };
+
+function configPath() {
+  return path.join(app.getPath('userData'), 'config.json');
+}
+
+ipcMain.handle('config:get', async () => {
+  try {
+    const raw = await fs.readFile(configPath(), 'utf8');
+    return { ...CONFIG_DEFAULTS, ...JSON.parse(raw) };
+  } catch {
+    return { ...CONFIG_DEFAULTS };
+  }
+});
+
+ipcMain.handle('config:set', async (event, config) => {
+  await fs.writeFile(configPath(), JSON.stringify(config, null, 2), 'utf8');
+  return true;
+});
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1100,

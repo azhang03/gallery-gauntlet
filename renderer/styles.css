@@ -150,3 +150,71 @@ body {
   color: #9a9a9a;
   word-break: break-all;
 }
+
+/* Bottom bar: key → directory bindings. */
+.bindingbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+  background: #252526;
+  border-top: 1px solid #333;
+  flex-wrap: wrap;
+}
+
+.bindings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.4rem 0.2rem 0.2rem;
+  background: #333;
+  border: 1px solid #444;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.chip__key {
+  min-width: 1.5rem;
+  padding: 0.1rem 0.35rem;
+  color: #b5cea8;
+  background: #1e1e1e;
+  border: 1px solid #555;
+  border-radius: 3px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  cursor: pointer;
+}
+
+.chip__key:hover {
+  border-color: #0e639c;
+}
+
+.chip__label {
+  color: #e6e6e6;
+}
+
+.chip__remove {
+  padding: 0 0.2rem;
+  color: #9a9a9a;
+  background: transparent;
+  border: none;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chip__remove:hover {
+  color: #f48771;
+}
+
+.capture-hint {
+  color: #dcdcaa;
+  font-size: 0.85rem;
+}
