@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('galleryGauntlet', {
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
   // Lists top-level files in a folder: [{ name, path, ext, mtimeMs, size }].
   listFiles: (folderPath) => ipcRenderer.invoke('files:list', folderPath),
+  // Moves a file into destDir (collision-safe); resolves to the final destination path.
+  moveFile: (src, destDir) => ipcRenderer.invoke('files:move', src, destDir),
   // Persisted config (key bindings, settings).
   getConfig: () => ipcRenderer.invoke('config:get'),
   setConfig: (config) => ipcRenderer.invoke('config:set', config),

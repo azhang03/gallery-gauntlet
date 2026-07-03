@@ -123,9 +123,42 @@ ipcMain.handle('files:list', async (event, folderPath) => {
   return files;
 });
 
-// Persisted app config (key bindings, settings) as JSON in userData. Used from
-// Batch 5 on; kept generic so later batches can store more (sorted state, last folder).
-const CONFIG_DEFAULTS = { keepKey: 'k', bindings: [] };
+// Pick a destination path that doesn't overwrite: on a name clash, append " (n)".
+async function uniqueDest(destDir, name) {
+  const ext = path.extname(name);
+  const base = path.basename(name, ext);
+  let candidate = path.join(destDir, name);
+  let n = 1;
+  while (true) {
+    try {
+      await fs.access(candidate);
+      candidate = path.join(destDir, `${base} (${n})${ext}`);
+      n++;
+    } catch {
+      return candidate; // doesn't exist → free to use
+    }
+  }
+}
+
+// Move a file into destDir (collision-safe). Returns the final destination path.
+ipcMain.handle('files:move', async (event, srcPath, destDir) => {
+  const dest = await uniqueDest(destDir, path.basename(srcPath));
+  try {
+    await fs.rename(srcPath, dest);
+  } catch (err) {
+    if (err.code === 'EXDEV') {
+      // Cross-device move (e.g. D: -> C:): copy then delete the original.
+      await fs.copyFile(srcPath, dest);
+      await fs.unlink(srcPath);
+    } else {
+      throw err;
+    }
+  }
+  return dest;
+});
+
+// Persisted app config (bindings, settings, per-folder sorted state) as JSON in userData.
+const CONFIG_DEFAULTS = { keepKey: 'k', bindings: [], includeSorted: false, sorted: {} };
 
 function configPath() {
   return path.join(app.getPath('userData'), 'config.json');
@@ -140,9 +173,14 @@ ipcMain.handle('config:get', async () => {
   }
 });
 
-ipcMain.handle('config:set', async (event, config) => {
-  await fs.writeFile(configPath(), JSON.stringify(config, null, 2), 'utf8');
-  return true;
+// Serialize writes so rapid decisions can't interleave and corrupt config.json.
+let configWrite = Promise.resolve();
+ipcMain.handle('config:set', (event, config) => {
+  const result = configWrite.then(() =>
+    fs.writeFile(configPath(), JSON.stringify(config, null, 2), 'utf8'),
+  );
+  configWrite = result.catch(() => {}); // keep the chain alive if one write fails
+  return result;
 });
 
 function createWindow() {

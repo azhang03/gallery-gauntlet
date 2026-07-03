@@ -1,8 +1,10 @@
-// Batch 5: open/sort/render files, plus configure key→directory bindings (bottom bar).
+// Batch 6: open/sort/render files, configure bindings, and act on them (move/keep)
+// with per-folder "Sorted" tracking and an "Include sorted" filter.
 const api = window.galleryGauntlet;
 
 const openBtn = document.getElementById('open-btn');
 const sortSelect = document.getElementById('sort-select');
+const includeSortedEl = document.getElementById('include-sorted');
 const muteBtn = document.getElementById('mute-btn');
 const folderPathEl = document.getElementById('folder-path');
 const positionEl = document.getElementById('position');
@@ -13,6 +15,7 @@ const fileNameEl = document.getElementById('file-name');
 const bindingsEl = document.getElementById('bindings');
 const addBindingBtn = document.getElementById('add-binding');
 const captureHintEl = document.getElementById('capture-hint');
+const toastEl = document.getElementById('toast');
 
 // Extensions Chromium can render inline as images.
 const IMAGE_EXTS = new Set([
@@ -24,16 +27,22 @@ const VIDEO_EXTS = new Set(['.mp4', '.m4v', '.webm', '.ogv', '.mov']);
 // Keys the app owns, so they can't be bound to a directory.
 const RESERVED_KEYS = new Set(['ArrowLeft', 'ArrowRight']);
 
-let files = [];
+let allFiles = [];      // sorted, still-present files in the current folder
+let files = [];         // visible list (allFiles minus sorted, unless includeSorted)
 let index = 0;
 let folder = null;
-let isMuted = false; // persists across videos for the session
+let isMuted = false;    // persists across videos for the session
 let sortMode = 'date-desc'; // 'date-desc' | 'date-asc' | 'random'
+let acting = false;     // guards against overlapping async move actions
 
-// Bindings config (Batch 5). Pressing bound keys performs actions in Batch 6.
+// Persisted config.
 let keepKey = 'k';
-let bindings = []; // [{ key, dir }]
-let capture = null; // pending key capture: { type: 'add'|'rebind-keep'|'rebind-dir', dir?, binding? }
+let bindings = [];      // [{ key, dir }]
+let capture = null;     // pending key capture: { type, dir?, binding? }
+let includeSorted = false;
+let sortedState = {};   // { [folderPath]: { [filePath]: true } }
+let sortedSet = new Set(); // sorted paths in the CURRENT folder
+let undoStack = [];     // in-memory undo entries for the CURRENT folder only
 
 openBtn.addEventListener('click', openFolder);
 muteBtn.addEventListener('click', toggleMute);
@@ -41,20 +50,31 @@ addBindingBtn.addEventListener('click', startAddBinding);
 sortSelect.addEventListener('change', () => {
   sortMode = sortSelect.value;
   sortFiles();
+  refreshVisible();
+  index = 0;
+  render();
+});
+includeSortedEl.addEventListener('change', () => {
+  includeSorted = includeSortedEl.checked;
+  saveConfig();
+  refreshVisible();
   index = 0;
   render();
 });
 
-// Load persisted bindings on startup.
+// Load persisted config on startup.
 initConfig();
 async function initConfig() {
   const cfg = await api.getConfig();
   keepKey = cfg.keepKey || 'k';
   bindings = Array.isArray(cfg.bindings) ? cfg.bindings : [];
+  includeSorted = !!cfg.includeSorted;
+  sortedState = cfg.sorted && typeof cfg.sorted === 'object' ? cfg.sorted : {};
+  includeSortedEl.checked = includeSorted;
   renderBindings();
 }
 
-// --- files: load / sort / navigate / render ---
+// --- files: load / sort / filter / navigate / render ---
 
 async function openFolder() {
   const picked = await api.pickFolder();
@@ -66,30 +86,39 @@ async function loadFolder(folderPath) {
   folder = folderPath;
   folderPathEl.textContent = folderPath;
   try {
-    files = await api.listFiles(folderPath);
+    allFiles = await api.listFiles(folderPath);
   } catch (err) {
+    allFiles = [];
     files = [];
     index = 0;
     showEmpty(`Could not read folder: ${err.message}`);
     return;
   }
+  sortedSet = new Set(Object.keys(sortedState[folder] || {}));
+  undoStack = []; // undo never crosses folders
   sortFiles();
+  refreshVisible();
   index = 0;
   render();
 }
 
-// Reorder `files` in place per the current sort mode.
+// Reorder `allFiles` in place per the current sort mode.
 function sortFiles() {
   if (sortMode === 'date-asc') {
-    files.sort((a, b) => a.mtimeMs - b.mtimeMs);
+    allFiles.sort((a, b) => a.mtimeMs - b.mtimeMs);
   } else if (sortMode === 'date-desc') {
-    files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    allFiles.sort((a, b) => b.mtimeMs - a.mtimeMs);
   } else if (sortMode === 'random') {
-    for (let i = files.length - 1; i > 0; i--) {
+    for (let i = allFiles.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [files[i], files[j]] = [files[j], files[i]];
+      [allFiles[i], allFiles[j]] = [allFiles[j], allFiles[i]];
     }
   }
+}
+
+// Derive the visible list from allFiles + the sorted filter.
+function refreshVisible() {
+  files = includeSorted ? allFiles.slice() : allFiles.filter((f) => !sortedSet.has(f.path));
 }
 
 function showEmpty(message) {
@@ -110,7 +139,9 @@ function clearDisplay() {
 
 function render() {
   if (files.length === 0) {
-    showEmpty(folder ? 'No files in this folder.' : 'Open a folder to start sorting.');
+    if (!folder) showEmpty('Open a folder to start sorting.');
+    else if (allFiles.length === 0) showEmpty('No files in this folder.');
+    else showEmpty('Nothing left to sort 🎉  (toggle "Include sorted" to review)');
     return;
   }
 
@@ -201,7 +232,105 @@ function showUnplayable(file) {
   fileDisplayEl.replaceChildren(wrap);
 }
 
-// --- key → directory bindings (config only in Batch 5) ---
+// --- actions: move / keep ---
+
+function currentFile() {
+  return files[index];
+}
+
+async function moveCurrent(binding) {
+  if (acting) return;
+  const file = currentFile();
+  if (!file) return;
+  acting = true;
+  let toPath;
+  try {
+    toPath = await api.moveFile(file.path, binding.dir);
+  } catch (err) {
+    toast(`Move failed: ${err.message}`);
+    acting = false;
+    return;
+  }
+  allFiles = allFiles.filter((f) => f !== file); // it's gone from this folder now
+  markSorted(file.path);
+  undoStack.push({ type: 'move', file, toPath, dir: folder });
+  toast(`→ ${dirLabel(binding.dir)}`);
+  advanceAfterDecision(false);
+  acting = false;
+}
+
+function keepCurrent() {
+  const file = currentFile();
+  if (!file) return;
+  markSorted(file.path);
+  undoStack.push({ type: 'keep', file });
+  toast('Kept');
+  advanceAfterDecision(includeSorted); // if shown-when-sorted, the kept file stays → advance past it
+}
+
+function markSorted(filePath) {
+  sortedSet.add(filePath);
+  if (!sortedState[folder]) sortedState[folder] = {};
+  sortedState[folder][filePath] = true;
+  saveConfig();
+}
+
+function advanceAfterDecision(keptVisible) {
+  refreshVisible();
+  if (keptVisible) index += 1; // decided file is still in the list → step to the next
+  // else: the decided file left the list, so the next one slides into the current index
+  if (index > files.length - 1) index = files.length - 1;
+  if (index < 0) index = 0;
+  render();
+}
+
+function unmarkSorted(filePath) {
+  sortedSet.delete(filePath);
+  if (sortedState[folder]) delete sortedState[folder][filePath];
+  saveConfig();
+}
+
+// Reverse the last decision (move → move the file back; keep → un-mark Sorted).
+async function undo() {
+  if (acting) return;
+  if (undoStack.length === 0) {
+    toast('Nothing to undo');
+    return;
+  }
+  const entry = undoStack.pop();
+
+  if (entry.type === 'keep') {
+    unmarkSorted(entry.file.path);
+    refreshVisible();
+    index = Math.max(0, files.indexOf(entry.file));
+    render();
+    toast('Undid keep');
+    return;
+  }
+
+  // move: put the file back into its source folder (collision-safe)
+  acting = true;
+  let restored;
+  try {
+    restored = await api.moveFile(entry.toPath, entry.dir);
+  } catch (err) {
+    undoStack.push(entry); // keep it so the user can retry
+    toast(`Undo failed: ${err.message}`);
+    acting = false;
+    return;
+  }
+  unmarkSorted(entry.file.path);
+  entry.file.path = restored; // may differ if the original name was taken again
+  allFiles.push(entry.file);
+  sortFiles();
+  refreshVisible();
+  index = Math.max(0, files.indexOf(entry.file));
+  render();
+  toast('Undid move');
+  acting = false;
+}
+
+// --- key → directory bindings ---
 
 function dirLabel(dir) {
   const parts = dir.split(/[\\/]/).filter(Boolean);
@@ -345,23 +474,54 @@ function handleCaptureKey(event) {
 }
 
 function saveConfig() {
-  api.setConfig({ keepKey, bindings });
+  api.setConfig({ keepKey, bindings, includeSorted, sorted: sortedState });
 }
 
-// Keyboard: capture a binding key if capturing; otherwise navigate with the arrows.
+let toastTimer = null;
+function toast(msg) {
+  toastEl.textContent = msg;
+  toastEl.hidden = false;
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toastEl.hidden = true; }, 900);
+}
+
+// Keyboard: capture a binding key if capturing; else navigate (arrows) or act (keep / bound key).
 window.addEventListener('keydown', (event) => {
   if (capture) {
     handleCaptureKey(event);
     return;
   }
+  // Undo must work even when the list is empty and takes priority over a bound "z".
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+    event.preventDefault();
+    undo();
+    return;
+  }
+  if (acting) return; // ignore input while a move is in flight
   if (files.length === 0) return;
+
   if (event.key === 'ArrowRight') {
     event.preventDefault();
     index = Math.min(index + 1, files.length - 1);
     render();
-  } else if (event.key === 'ArrowLeft') {
+    return;
+  }
+  if (event.key === 'ArrowLeft') {
     event.preventDefault();
     index = Math.max(index - 1, 0);
     render();
+    return;
+  }
+
+  const key = normalizeKey(event.key);
+  if (key === keepKey) {
+    event.preventDefault();
+    keepCurrent();
+    return;
+  }
+  const binding = bindings.find((b) => b.key === key);
+  if (binding) {
+    event.preventDefault();
+    moveCurrent(binding);
   }
 });
