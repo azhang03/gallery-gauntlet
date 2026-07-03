@@ -16,6 +16,8 @@ const bindingsEl = document.getElementById('bindings');
 const addBindingBtn = document.getElementById('add-binding');
 const captureHintEl = document.getElementById('capture-hint');
 const toastEl = document.getElementById('toast');
+const themeToggle = document.getElementById('theme-toggle');
+const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
 
 // Extensions Chromium can render inline as images.
 const IMAGE_EXTS = new Set([
@@ -44,6 +46,7 @@ let sortedState = {};   // { [folderPath]: { [filePath]: true } }
 let sortedSet = new Set(); // sorted paths in the CURRENT folder
 let undoStack = [];     // in-memory undo entries for the CURRENT folder only
 let lastFolder = null;  // remembered across launches (resume on startup)
+let theme = 'system';   // 'system' | 'light' | 'dark'
 
 openBtn.addEventListener('click', openFolder);
 muteBtn.addEventListener('click', toggleMute);
@@ -63,11 +66,32 @@ includeSortedEl.addEventListener('change', () => {
   index = 0;
   render();
 });
+themeToggle.addEventListener('click', () => {
+  theme = effectiveTheme() === 'dark' ? 'light' : 'dark';
+  applyTheme();
+  saveConfig();
+});
+// Keep the toggle icon correct if the OS theme changes while we're on "system".
+prefersDark.addEventListener('change', () => { if (theme === 'system') applyTheme(); });
+
+function effectiveTheme() {
+  if (theme === 'light' || theme === 'dark') return theme;
+  return prefersDark.matches ? 'dark' : 'light';
+}
+
+function applyTheme() {
+  document.documentElement.dataset.theme = theme;
+  const eff = effectiveTheme();
+  themeToggle.textContent = eff === 'dark' ? '☀️' : '🌙'; // icon of the mode you'd switch TO
+  themeToggle.title = eff === 'dark' ? 'Switch to light' : 'Switch to dark';
+}
 
 // Load persisted config on startup.
 initConfig();
 async function initConfig() {
   const cfg = await api.getConfig();
+  theme = cfg.theme || 'system';
+  applyTheme();
   keepKey = cfg.keepKey || 'k';
   bindings = Array.isArray(cfg.bindings) ? cfg.bindings : [];
   includeSorted = !!cfg.includeSorted;
@@ -497,7 +521,7 @@ function handleCaptureKey(event) {
 }
 
 function saveConfig() {
-  api.setConfig({ keepKey, bindings, includeSorted, sorted: sortedState, sortMode, lastFolder });
+  api.setConfig({ keepKey, bindings, includeSorted, sorted: sortedState, sortMode, lastFolder, theme });
 }
 
 let toastTimer = null;

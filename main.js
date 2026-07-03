@@ -160,7 +160,7 @@ ipcMain.handle('files:move', async (event, srcPath, destDir) => {
 // Persisted app config (bindings, settings, per-folder sorted state) as JSON in userData.
 const CONFIG_DEFAULTS = {
   keepKey: 'k', bindings: [], includeSorted: false, sorted: {},
-  sortMode: 'date-desc', lastFolder: null,
+  sortMode: 'date-desc', lastFolder: null, theme: 'system',
 };
 
 function configPath() {
