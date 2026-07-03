@@ -25,7 +25,7 @@ const IMAGE_EXTS = new Set([
 // Video formats Electron/Chromium can decode. Others fall back to the file icon.
 const VIDEO_EXTS = new Set(['.mp4', '.m4v', '.webm', '.ogv', '.mov']);
 // Keys the app owns, so they can't be bound to a directory.
-const RESERVED_KEYS = new Set(['ArrowLeft', 'ArrowRight']);
+const RESERVED_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'Tab', 'Enter', 'Escape']);
 
 let allFiles = [];      // sorted, still-present files in the current folder
 let files = [];         // visible list (allFiles minus sorted, unless includeSorted)
@@ -43,12 +43,14 @@ let includeSorted = false;
 let sortedState = {};   // { [folderPath]: { [filePath]: true } }
 let sortedSet = new Set(); // sorted paths in the CURRENT folder
 let undoStack = [];     // in-memory undo entries for the CURRENT folder only
+let lastFolder = null;  // remembered across launches (resume on startup)
 
 openBtn.addEventListener('click', openFolder);
 muteBtn.addEventListener('click', toggleMute);
 addBindingBtn.addEventListener('click', startAddBinding);
 sortSelect.addEventListener('change', () => {
   sortMode = sortSelect.value;
+  saveConfig();
   sortFiles();
   refreshVisible();
   index = 0;
@@ -70,8 +72,13 @@ async function initConfig() {
   bindings = Array.isArray(cfg.bindings) ? cfg.bindings : [];
   includeSorted = !!cfg.includeSorted;
   sortedState = cfg.sorted && typeof cfg.sorted === 'object' ? cfg.sorted : {};
+  sortMode = cfg.sortMode || 'date-desc';
+  lastFolder = cfg.lastFolder || null;
   includeSortedEl.checked = includeSorted;
+  sortSelect.value = sortMode;
   renderBindings();
+  // Resume the last folder on launch.
+  if (lastFolder) loadFolder(lastFolder);
 }
 
 // --- files: load / sort / filter / navigate / render ---
@@ -83,23 +90,32 @@ async function openFolder() {
 }
 
 async function loadFolder(folderPath) {
-  folder = folderPath;
-  folderPathEl.textContent = folderPath;
+  let listed;
   try {
-    allFiles = await api.listFiles(folderPath);
+    listed = await api.listFiles(folderPath);
   } catch (err) {
+    // Folder unreadable/gone — don't wedge; forget it if it was the remembered one.
+    if (lastFolder === folderPath) { lastFolder = null; saveConfig(); }
+    folder = null;
     allFiles = [];
     files = [];
     index = 0;
-    showEmpty(`Could not read folder: ${err.message}`);
+    folderPathEl.textContent = 'No folder selected';
+    showEmpty('Open a folder to start sorting.');
+    toast('Could not open that folder');
     return;
   }
+  folder = folderPath;
+  lastFolder = folderPath;
+  folderPathEl.textContent = folderPath;
+  allFiles = listed;
   sortedSet = new Set(Object.keys(sortedState[folder] || {}));
   undoStack = []; // undo never crosses folders
   sortFiles();
   refreshVisible();
   index = 0;
   render();
+  saveConfig(); // remember this folder for next launch
 }
 
 // Reorder `allFiles` in place per the current sort mode.
@@ -247,7 +263,14 @@ async function moveCurrent(binding) {
   try {
     toPath = await api.moveFile(file.path, binding.dir);
   } catch (err) {
-    toast(`Move failed: ${err.message}`);
+    if (err.message && err.message.includes('ENOENT')) {
+      // Removed externally between listing and now — skip it (not a decision).
+      allFiles = allFiles.filter((f) => f !== file);
+      toast('File no longer exists — skipped');
+      advanceAfterDecision(false);
+    } else {
+      toast(`Move failed: ${err.message}`);
+    }
     acting = false;
     return;
   }
@@ -474,7 +497,7 @@ function handleCaptureKey(event) {
 }
 
 function saveConfig() {
-  api.setConfig({ keepKey, bindings, includeSorted, sorted: sortedState });
+  api.setConfig({ keepKey, bindings, includeSorted, sorted: sortedState, sortMode, lastFolder });
 }
 
 let toastTimer = null;
