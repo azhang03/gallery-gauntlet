@@ -12,8 +12,7 @@ const emptyEl = document.getElementById('empty');
 const fileViewEl = document.getElementById('file-view');
 const fileDisplayEl = document.getElementById('file-display');
 const fileNameEl = document.getElementById('file-name');
-const bindingsEl = document.getElementById('bindings');
-const addBindingBtn = document.getElementById('add-binding');
+const dockTilesEl = document.getElementById('dock-tiles');
 const captureHintEl = document.getElementById('capture-hint');
 const toastEl = document.getElementById('toast');
 const themeToggle = document.getElementById('theme-toggle');
@@ -50,7 +49,6 @@ let theme = 'system';   // 'system' | 'light' | 'dark'
 
 openBtn.addEventListener('click', openFolder);
 muteBtn.addEventListener('click', toggleMute);
-addBindingBtn.addEventListener('click', startAddBinding);
 sortSelect.addEventListener('change', () => {
   sortMode = sortSelect.value;
   saveConfig();
@@ -100,7 +98,7 @@ async function initConfig() {
   lastFolder = cfg.lastFolder || null;
   includeSortedEl.checked = includeSorted;
   sortSelect.value = sortMode;
-  renderBindings();
+  renderDock();
   // Resume the last folder on launch.
   if (lastFolder) loadFolder(lastFolder);
 }
@@ -389,60 +387,128 @@ function keyDisplay(key) {
   return key.length === 1 ? key.toUpperCase() : key;
 }
 
-function renderBindings() {
-  bindingsEl.replaceChildren();
-  bindingsEl.appendChild(makeChip({
+// Render the folder dock: Keep pin tile, one tile per bound folder, then + Add.
+function renderDock() {
+  dockTilesEl.replaceChildren();
+
+  dockTilesEl.appendChild(makeTile({
     key: keepKey,
     label: 'Keep',
-    removable: false,
+    variant: 'keep',
+    capturing: !!capture && capture.type === 'rebind-keep',
     onRebind: startRebindKeep,
   }));
+
   for (const binding of bindings) {
-    bindingsEl.appendChild(makeChip({
+    dockTilesEl.appendChild(makeTile({
       key: binding.key,
       label: dirLabel(binding.dir),
       title: binding.dir,
-      removable: true,
+      variant: 'folder',
+      capturing: !!capture && capture.type === 'rebind-dir' && capture.binding === binding,
       onRebind: () => startRebindDir(binding),
+      onOpen: () => openInExplorer(binding.dir),
+      onSwap: () => startSwap(binding),
       onRemove: () => removeBinding(binding),
     }));
   }
+
+  dockTilesEl.appendChild(makeAddTile());
 }
 
-function makeChip({ key, label, title, removable, onRebind, onRemove }) {
-  const chip = document.createElement('div');
-  chip.className = 'chip';
-  if (title) chip.title = title;
+const SVG_NS = 'http://www.w3.org/2000/svg';
 
-  const keyBadge = document.createElement('button');
-  keyBadge.type = 'button';
-  keyBadge.className = 'chip__key';
-  keyBadge.textContent = keyDisplay(key);
-  keyBadge.title = 'Click to rebind key';
-  keyBadge.addEventListener('click', onRebind);
-  chip.appendChild(keyBadge);
+function makeGlyph(pathD) {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('class', 'tile__glyph');
+  const p = document.createElementNS(SVG_NS, 'path');
+  p.setAttribute('d', pathD);
+  p.setAttribute('fill', 'currentColor');
+  svg.appendChild(p);
+  return svg;
+}
 
-  const labelEl = document.createElement('span');
-  labelEl.className = 'chip__label';
-  labelEl.textContent = label;
-  chip.appendChild(labelEl);
+const makeFolderGlyph = () =>
+  makeGlyph('M4 7a2 2 0 0 1 2-2h3l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z');
+const makePinGlyph = () =>
+  makeGlyph('M12 2a6 6 0 0 0-6 6c0 4.5 6 12 6 12s6-7.5 6-12a6 6 0 0 0-6-6zm0 8.5A2.5 2.5 0 1 1 12 5a2.5 2.5 0 0 1 0 5.5z');
 
-  if (removable) {
-    const rm = document.createElement('button');
-    rm.type = 'button';
-    rm.className = 'chip__remove';
-    rm.textContent = '×';
-    rm.title = 'Remove binding';
-    rm.addEventListener('click', onRemove);
-    chip.appendChild(rm);
+function makeTile({ key, label, title, variant, capturing, onRebind, onOpen, onSwap, onRemove }) {
+  const tile = document.createElement('div');
+  tile.className = `tile tile--${variant}`;
+  if (title) tile.title = title;
+
+  if (onRemove) {
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'tile__x';
+    x.textContent = '×';
+    x.title = 'Remove binding';
+    x.addEventListener('click', (e) => { e.stopPropagation(); onRemove(); });
+    tile.appendChild(x);
   }
-  return chip;
+  if (onSwap) {
+    const sw = document.createElement('button');
+    sw.type = 'button';
+    sw.className = 'tile__swap';
+    sw.textContent = '⇄';
+    sw.title = 'Swap folder (keep the key)';
+    sw.addEventListener('click', (e) => { e.stopPropagation(); onSwap(); });
+    tile.appendChild(sw);
+  }
+
+  const glyph = variant === 'keep' ? makePinGlyph() : makeFolderGlyph();
+  const name = document.createElement('div');
+  name.className = 'tile__name';
+  name.textContent = label;
+
+  // Folder body is clickable (opens Explorer); Keep body is static.
+  const body = document.createElement(onOpen ? 'button' : 'div');
+  body.className = 'tile__body';
+  if (onOpen) {
+    body.type = 'button';
+    body.title = 'Open folder in Explorer';
+    body.addEventListener('click', onOpen);
+  }
+  body.append(glyph, name);
+  tile.appendChild(body);
+
+  const keyBtn = document.createElement('button');
+  keyBtn.type = 'button';
+  keyBtn.className = 'tile__key' + (capturing ? ' capturing' : '');
+  keyBtn.textContent = capturing ? '…' : keyDisplay(key);
+  keyBtn.title = 'Click to rebind key';
+  keyBtn.addEventListener('click', onRebind);
+  tile.appendChild(keyBtn);
+
+  return tile;
+}
+
+function makeAddTile() {
+  const tile = document.createElement('button');
+  tile.type = 'button';
+  tile.className = 'tile tile--add';
+  tile.title = 'Add a folder binding';
+  tile.addEventListener('click', startAddBinding);
+
+  const plus = document.createElement('div');
+  plus.className = 'tile__plus';
+  plus.textContent = '+';
+  tile.appendChild(plus);
+
+  const name = document.createElement('div');
+  name.className = 'tile__name';
+  name.textContent = 'Add folder';
+  tile.appendChild(name);
+
+  return tile;
 }
 
 function removeBinding(binding) {
   bindings = bindings.filter((b) => b !== binding);
   saveConfig();
-  renderBindings();
+  renderDock();
 }
 
 async function startAddBinding() {
@@ -451,18 +517,38 @@ async function startAddBinding() {
   if (!dir) return;
   capture = { type: 'add', dir };
   showCaptureHint(`Press a key to bind to "${dirLabel(dir)}" — Esc to cancel`);
+  renderDock();
+}
+
+// Swap the folder of an existing binding, keeping its key.
+async function startSwap(binding) {
+  if (capture) return;
+  const dir = await api.pickFolder();
+  if (!dir) return;
+  binding.dir = dir;
+  saveConfig();
+  renderDock();
+  toast(`Swapped → ${dirLabel(dir)}`);
+}
+
+// Open a bound folder in the OS file manager (Explorer).
+async function openInExplorer(dir) {
+  const err = await api.openPath(dir);
+  if (err) toast(`Could not open folder: ${err}`);
 }
 
 function startRebindKeep() {
   if (capture) return;
   capture = { type: 'rebind-keep' };
   showCaptureHint('Press a new key for Keep — Esc to cancel');
+  renderDock();
 }
 
 function startRebindDir(binding) {
   if (capture) return;
   capture = { type: 'rebind-dir', binding };
   showCaptureHint(`Press a new key for "${dirLabel(binding.dir)}" — Esc to cancel`);
+  renderDock();
 }
 
 function showCaptureHint(text) {
@@ -473,6 +559,7 @@ function showCaptureHint(text) {
 function endCapture() {
   capture = null;
   captureHintEl.hidden = true;
+  renderDock();
 }
 
 function normalizeKey(key) {
@@ -517,7 +604,7 @@ function handleCaptureKey(event) {
 
   endCapture();
   saveConfig();
-  renderBindings();
+  renderDock();
 }
 
 function saveConfig() {

@@ -13,6 +13,8 @@
   --on-accent: light-dark(#ffffff, #0f221c);
   --danger: light-dark(#c0392b, #f48771);
   --shadow: light-dark(0 6px 24px rgba(0, 0, 0, 0.12), 0 8px 28px rgba(0, 0, 0, 0.45));
+  --folder-fill: light-dark(#cfe7dd, #2f4a41);
+  --folder-fill-strong: light-dark(#a9d6c5, #3f6759);
 
   --radius: 14px;
   --radius-sm: 9px;
@@ -132,12 +134,13 @@ body {
 
 /* --- Viewer --- */
 .viewer {
-  flex: 1;
+  flex: 3;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 2rem;
   text-align: center;
+  min-height: 0;
 }
 
 .empty {
@@ -203,69 +206,186 @@ body {
   word-break: break-all;
 }
 
-/* --- Bottom bindings bar (restyled here; replaced by the folder dock in P2-2) --- */
-.bindingbar {
+/* --- Folder dock (bottom ~40%) --- */
+.dock {
+  flex: 2;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.7rem 1.1rem;
+  justify-content: center;
+  gap: 0.9rem;
+  padding: 1.1rem 1.5rem;
   background: var(--surface);
   border-top: 1px solid var(--border);
-  flex-wrap: wrap;
+  min-height: 0;
 }
 
-.bindings {
+.dock-tiles {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  flex: 1;
-  min-width: 0;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1.5rem;
+  max-width: 100%;
+  overflow-y: auto;
 }
 
-.chip {
+.dock-status {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  min-height: 1.1rem;
+}
+
+.tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  width: 118px;
+  padding: 0.5rem 0.4rem;
+  border-radius: var(--radius);
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+}
+
+/* Glyph + name; clickable (opens Explorer) on folder tiles. */
+.tile__body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius);
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: default;
+  transition: background-color var(--t), transform var(--t);
+}
+
+.tile--folder .tile__body {
+  cursor: pointer;
+}
+
+.tile--folder .tile__body:hover {
+  background: var(--surface-2);
+  transform: translateY(-2px);
+}
+
+.tile--folder .tile__body:hover .tile__glyph {
+  color: var(--folder-fill-strong);
+}
+
+/* Hover controls: ✕ delete (top-left), ⇄ swap (top-right). */
+.tile__x,
+.tile__swap {
+  position: absolute;
+  top: 0;
+  width: 1.5rem;
+  height: 1.5rem;
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  padding: 0.25rem 0.45rem 0.25rem 0.25rem;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
   background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: 0.85rem;
-}
-
-.chip__key {
-  min-width: 1.5rem;
-  padding: 0.12rem 0.4rem;
-  color: var(--accent);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-family: var(--mono);
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1;
   cursor: pointer;
-  transition: border-color var(--t), color var(--t);
+  opacity: 0;
+  transition: opacity var(--t), background-color var(--t), color var(--t);
+  z-index: 2;
 }
 
-.chip__key:hover {
-  border-color: var(--accent);
+.tile__x { left: 0.1rem; }
+.tile__swap { right: 0.1rem; }
+
+.tile:hover .tile__x,
+.tile:hover .tile__swap,
+.tile__x:focus-visible,
+.tile__swap:focus-visible {
+  opacity: 1;
 }
 
-.chip__label {
+.tile__x:hover { background: var(--danger); color: #fff; }
+.tile__swap:hover { background: var(--accent); color: var(--on-accent); }
+
+.tile__glyph {
+  width: 62px;
+  height: 62px;
+  color: var(--folder-fill);
+  transition: color var(--t), transform var(--t);
+}
+
+.tile--keep .tile__glyph {
+  color: var(--accent);
+}
+
+.tile__name {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
   color: var(--text);
 }
 
-.chip__remove {
-  padding: 0 0.2rem;
-  color: var(--text-muted);
-  background: transparent;
-  border: none;
-  font-size: 1rem;
-  line-height: 1;
+.tile__key {
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: 0.9rem;
   cursor: pointer;
-  transition: color var(--t);
+  transition: background-color var(--t), border-color var(--t), color var(--t);
 }
 
-.chip__remove:hover {
-  color: var(--danger);
+.tile__key:hover {
+  border-color: var(--accent);
+}
+
+.tile__key.capturing {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* + Add tile */
+.tile--add {
+  cursor: pointer;
+  justify-content: center;
+  border: 2px dashed var(--border);
+  color: var(--text-muted);
+  transition: border-color var(--t), color var(--t);
+}
+
+.tile--add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tile__plus {
+  width: 62px;
+  height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.5rem;
+  line-height: 1;
 }
 
 .capture-hint {

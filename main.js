@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const { createReadStream } = require('node:fs');
@@ -139,6 +139,9 @@ async function uniqueDest(destDir, name) {
     }
   }
 }
+
+// Open a folder in the OS file manager (Explorer). Returns '' on success, else an error string.
+ipcMain.handle('shell:openPath', async (event, dirPath) => shell.openPath(dirPath));
 
 // Move a file into destDir (collision-safe). Returns the final destination path.
 ipcMain.handle('files:move', async (event, srcPath, destDir) => {
