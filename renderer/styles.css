@@ -13,8 +13,8 @@
   --on-accent: light-dark(#ffffff, #0f221c);
   --danger: light-dark(#c0392b, #f48771);
   --shadow: light-dark(0 6px 24px rgba(0, 0, 0, 0.12), 0 8px 28px rgba(0, 0, 0, 0.45));
-  --folder-fill: light-dark(#cfe7dd, #2f4a41);
-  --folder-fill-strong: light-dark(#a9d6c5, #3f6759);
+  --folder-fill: light-dark(#2f9e80, #5aa892);
+  --folder-fill-strong: light-dark(#1f8067, #74c4ad);
 
   --radius: 14px;
   --radius-sm: 9px;
