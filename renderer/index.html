@@ -19,7 +19,6 @@
         <input type="checkbox" id="include-sorted" /> Include sorted
       </label>
       <span id="folder-path" class="folder-path">No folder selected</span>
-      <span id="position" class="position"></span>
       <button id="mute-btn" type="button" class="btn btn-icon" hidden
               title="Mute videos" aria-label="Mute videos">🔊</button>
       <button id="theme-toggle" type="button" class="btn btn-icon"
@@ -31,7 +30,13 @@
 
       <div id="file-view" class="file-view" hidden>
         <div id="file-display" class="file-display"></div>
-        <div id="file-name" class="file-name"></div>
+        <div class="caption">
+          <div id="file-name" class="file-name"></div>
+          <div id="progress-text" class="progress-text"></div>
+          <div class="progress-bar">
+            <div id="progress-fill" class="progress-bar__fill"></div>
+          </div>
+        </div>
       </div>
     </main>
 

@@ -20,6 +20,25 @@
   --radius-sm: 9px;
   --t: 160ms ease;
 
+  /* Type scale */
+  --fs-xs: 0.78rem;
+  --fs-sm: 0.85rem;
+  --fs-md: 0.95rem;
+  --fs-lg: 1.05rem;
+  --fs-xl: 1.15rem;
+
+  /* Spacing scale */
+  --sp-1: 0.35rem;
+  --sp-2: 0.6rem;
+  --sp-3: 0.9rem;
+  --sp-4: 1.4rem;
+  --sp-5: 2rem;
+
+  /* Motion */
+  --t-media: 170ms;
+  --t-fly: 260ms;
+  --ease-out: cubic-bezier(0.4, 0, 0.2, 1);
+
   --mono: "Cascadia Code", Consolas, ui-monospace, monospace;
 }
 
@@ -51,8 +70,8 @@ body {
 .topbar {
   display: flex;
   align-items: center;
-  gap: 0.85rem;
-  padding: 0.7rem 1.1rem;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
@@ -60,7 +79,7 @@ body {
 /* Buttons */
 .btn {
   padding: 0.45rem 0.95rem;
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
   font-weight: 500;
   color: var(--text);
   background: var(--surface-2);
@@ -86,7 +105,7 @@ body {
 
 .sort-select {
   padding: 0.4rem 0.55rem;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   color: var(--text);
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -112,13 +131,7 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-muted);
-  font-size: 0.85rem;
-}
-
-.position {
-  color: var(--text-muted);
-  font-family: var(--mono);
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
 }
 
 .include-sorted {
@@ -126,7 +139,7 @@ body {
   align-items: center;
   gap: 0.4rem;
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   white-space: nowrap;
   cursor: pointer;
   accent-color: var(--accent);
@@ -138,17 +151,35 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 2rem;
+  padding: var(--sp-5) var(--sp-4);
   text-align: center;
   min-height: 0;
 }
 
 .empty {
   color: var(--text-muted);
-  font-size: 1.1rem;
+  font-size: var(--fs-xl);
+}
+
+/* Column: media takes the leftover height, caption sits under it. Media is sized
+   against this pane (not the viewport) so a tall image can't spill over the dock. */
+.file-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-height: 100%;
+  min-height: 0;
+}
+
+.file-view[hidden] {
+  display: none; /* `display: flex` above would otherwise defeat the hidden attribute */
 }
 
 .file-display {
+  flex: 1;
+  width: 100%;   /* definite, so the media's max-width/height resolve against this pane */
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -157,7 +188,7 @@ body {
 .file-display img,
 .file-display video {
   max-width: 100%;
-  max-height: 70vh;
+  max-height: 100%;
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 }
@@ -165,6 +196,34 @@ body {
 .file-display img {
   object-fit: contain;
   display: block;
+}
+
+/* Each newly rendered file animates in; direction follows arrow navigation. */
+.file-display > * {
+  animation: media-in var(--t-media) var(--ease-out);
+}
+
+@keyframes media-in {
+  from { opacity: 0; transform: scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+.file-display[data-dir="next"] > * {
+  animation-name: media-in-next;
+}
+
+.file-display[data-dir="prev"] > * {
+  animation-name: media-in-prev;
+}
+
+@keyframes media-in-next {
+  from { opacity: 0; transform: translateX(18px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes media-in-prev {
+  from { opacity: 0; transform: translateX(-18px); }
+  to   { opacity: 1; transform: none; }
 }
 
 .file-icon {
@@ -199,11 +258,44 @@ body {
   font-size: 0.9rem;
 }
 
+/* --- Caption: filename + progress read --- */
+.caption {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1);
+  width: min(30rem, 100%);
+  margin-top: var(--sp-3);
+}
+
 .file-name {
-  margin-top: 0.9rem;
-  font-size: 0.95rem;
-  color: var(--text-muted);
+  font-size: var(--fs-md);
+  color: var(--text);
   word-break: break-all;
+}
+
+.progress-text {
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.progress-bar__fill {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width var(--t) var(--ease-out);
 }
 
 /* --- Folder dock (bottom ~40%) --- */
@@ -213,11 +305,11 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.9rem;
-  padding: 1.1rem 1.5rem;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
   background: var(--surface);
   border-top: 1px solid var(--border);
-  min-height: 0;
+  min-height: 12.5rem; /* floor: a short window must not crush the tiles */
 }
 
 .dock-tiles {
@@ -225,14 +317,14 @@ body {
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: center;
-  gap: 1.5rem;
+  gap: var(--sp-4);
   max-width: 100%;
   overflow-y: auto;
 }
 
 .dock-status {
   display: flex;
-  gap: 1rem;
+  gap: var(--sp-3);
   align-items: center;
   min-height: 1.1rem;
 }
@@ -328,6 +420,17 @@ body {
   color: var(--accent);
 }
 
+/* Landing pulse — fires as a sorted file's ghost arrives at this tile. */
+.tile.pulse .tile__glyph {
+  animation: tile-pulse 340ms var(--ease-out);
+}
+
+@keyframes tile-pulse {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.16); }
+  100% { transform: scale(1); }
+}
+
 .tile__name {
   max-width: 110px;
   overflow: hidden;
@@ -390,19 +493,39 @@ body {
 
 .capture-hint {
   color: var(--accent);
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
 }
 
 .undo-hint {
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: var(--fs-xs);
   white-space: nowrap;
 }
 
 /* --- Transient action feedback --- */
+
+/* Flying clone of the decided file, animated from the viewer to its target tile.
+   Lives on <body> so it outlives the re-render that replaces the viewer contents. */
+.ghost {
+  position: fixed;
+  z-index: 50;
+  margin: 0;
+  pointer-events: none;
+  object-fit: contain;
+  will-change: transform, opacity;
+}
+
+/* Only real media carries the viewer's card treatment — on a transparent file-icon
+   ghost a shadow would draw an empty floating rectangle. */
+.ghost:is(img, canvas) {
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+/* Sits just above the dock, which is ~40% of the height but never below its floor. */
 .toast {
   position: fixed;
-  bottom: 4.75rem;
+  bottom: calc(max(40%, 12.5rem) + 0.75rem);
   left: 50%;
   transform: translateX(-50%);
   padding: 0.45rem 0.9rem;
@@ -411,7 +534,19 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow);
-  font-size: 0.9rem;
-  z-index: 10;
+  font-size: var(--fs-sm);
+  z-index: 60;
   pointer-events: none;
+}
+
+/* Honour the OS "reduce motion" setting: keep every state change, drop the movement.
+   The fly helper also short-circuits in JS so no ghost element is created at all. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
 }

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, protocol, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, shell, nativeTheme } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const { createReadStream } = require('node:fs');
@@ -170,14 +170,16 @@ function configPath() {
   return path.join(app.getPath('userData'), 'config.json');
 }
 
-ipcMain.handle('config:get', async () => {
+async function readConfig() {
   try {
     const raw = await fs.readFile(configPath(), 'utf8');
     return { ...CONFIG_DEFAULTS, ...JSON.parse(raw) };
   } catch {
     return { ...CONFIG_DEFAULTS };
   }
-});
+}
+
+ipcMain.handle('config:get', readConfig);
 
 // Serialize writes so rapid decisions can't interleave and corrupt config.json.
 let configWrite = Promise.resolve();
@@ -189,11 +191,22 @@ ipcMain.handle('config:set', (event, config) => {
   return result;
 });
 
-function createWindow() {
+// Mirrors the renderer's --bg token, so the window paints the right shade before the
+// stylesheet loads instead of flashing dark on a light-theme launch.
+const BG_LIGHT = '#f5f4f1';
+const BG_DARK = '#1b1c1e';
+
+function backgroundFor(theme) {
+  if (theme === 'light') return BG_LIGHT;
+  if (theme === 'dark') return BG_DARK;
+  return nativeTheme.shouldUseDarkColors ? BG_DARK : BG_LIGHT; // 'system'
+}
+
+function createWindow(backgroundColor) {
   const win = new BrowserWindow({
     width: 1100,
     height: 800,
-    backgroundColor: '#1e1e1e',
+    backgroundColor,
     title: 'gallery-gauntlet',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -208,15 +221,19 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Serve local files (images + video, with Range support) via gg://<host>/?path=…
   protocol.handle('gg', serveLocalFile);
 
-  createWindow();
+  const config = await readConfig();
+  createWindow(backgroundFor(config.theme));
 
   // macOS: re-create a window when the dock icon is clicked and none are open.
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  app.on('activate', async () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      const latest = await readConfig(); // the theme may have changed since launch
+      createWindow(backgroundFor(latest.theme));
+    }
   });
 });
 

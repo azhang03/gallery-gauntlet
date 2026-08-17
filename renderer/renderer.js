@@ -7,16 +7,18 @@ const sortSelect = document.getElementById('sort-select');
 const includeSortedEl = document.getElementById('include-sorted');
 const muteBtn = document.getElementById('mute-btn');
 const folderPathEl = document.getElementById('folder-path');
-const positionEl = document.getElementById('position');
 const emptyEl = document.getElementById('empty');
 const fileViewEl = document.getElementById('file-view');
 const fileDisplayEl = document.getElementById('file-display');
 const fileNameEl = document.getElementById('file-name');
+const progressTextEl = document.getElementById('progress-text');
+const progressFillEl = document.getElementById('progress-fill');
 const dockTilesEl = document.getElementById('dock-tiles');
 const captureHintEl = document.getElementById('capture-hint');
 const toastEl = document.getElementById('toast');
 const themeToggle = document.getElementById('theme-toggle');
 const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
+const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 // Extensions Chromium can render inline as images.
 const IMAGE_EXTS = new Set([
@@ -35,6 +37,9 @@ let folder = null;
 let isMuted = false;    // persists across videos for the session
 let sortMode = 'date-desc'; // 'date-desc' | 'date-asc' | 'random'
 let acting = false;     // guards against overlapping async move actions
+let navDir = '';        // '' | 'next' | 'prev' — drives the enter animation's direction
+let decidedCount = 0;   // decisions made in this folder (incl. files already moved out)
+let remainingCount = 0; // files still present here and not yet decided
 
 // Persisted config.
 let keepKey = 'k';
@@ -154,9 +159,14 @@ function sortFiles() {
   }
 }
 
-// Derive the visible list from allFiles + the sorted filter.
+// Derive the visible list from allFiles + the sorted filter, and recompute the
+// progress tallies. They only change here — render() runs on every arrow key, so
+// re-counting there would rescan the whole folder on each keypress.
 function refreshVisible() {
-  files = includeSorted ? allFiles.slice() : allFiles.filter((f) => !sortedSet.has(f.path));
+  const undecided = allFiles.filter((f) => !sortedSet.has(f.path));
+  files = includeSorted ? allFiles.slice() : undecided;
+  decidedCount = sortedSet.size;   // includes files already moved out of the folder
+  remainingCount = undecided.length;
 }
 
 function showEmpty(message) {
@@ -164,7 +174,6 @@ function showEmpty(message) {
   fileViewEl.hidden = true;
   emptyEl.hidden = false;
   emptyEl.textContent = message;
-  positionEl.textContent = '';
   muteBtn.hidden = true;
 }
 
@@ -188,6 +197,7 @@ function render() {
 
   const file = files[index];
   clearDisplay();
+  fileDisplayEl.dataset.dir = navDir; // picks the enter animation's direction
 
   const isVideo = VIDEO_EXTS.has(file.ext);
   muteBtn.hidden = !isVideo;
@@ -216,7 +226,29 @@ function render() {
   }
 
   fileNameEl.textContent = file.name;
-  positionEl.textContent = `${index + 1} / ${files.length}`;
+  updateProgress();
+  preloadAhead();
+  navDir = ''; // consumed — a decision shouldn't inherit the last arrow's direction
+}
+
+function updateProgress() {
+  const total = decidedCount + remainingCount;
+  progressTextEl.textContent =
+    `${decidedCount} sorted · ${remainingCount} left · #${index + 1}`;
+  progressFillEl.style.width = total ? `${(decidedCount / total) * 100}%` : '0%';
+}
+
+// Warm the next couple of images so advancing shows them from cache instead of
+// blanking while they decode. Video is far too heavy to prefetch.
+const preloadRing = [];
+function preloadAhead() {
+  for (const file of files.slice(index + 1, index + 3)) {
+    if (!IMAGE_EXTS.has(file.ext)) continue;
+    const img = new Image();
+    img.src = mediaUrl(file);
+    preloadRing.push(img); // hold a reference so it isn't collected before we need it
+    if (preloadRing.length > 4) preloadRing.shift();
+  }
 }
 
 function mediaUrl(file) {
@@ -270,6 +302,80 @@ function showUnplayable(file) {
   fileDisplayEl.replaceChildren(wrap);
 }
 
+// --- decision feedback: fly the decided file into its destination tile ---
+
+// A detached, fixed-position copy of whatever is on screen, so it can keep animating
+// after render() replaces the viewer contents with the next file.
+function makeGhost() {
+  const source = fileDisplayEl.firstElementChild;
+  if (!source) return null;
+  const rect = source.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+
+  let ghost;
+  if (source.tagName === 'VIDEO') {
+    // Cloning a <video> yields a blank element, so snapshot the current frame.
+    ghost = document.createElement('canvas');
+    ghost.width = source.videoWidth || Math.round(rect.width);
+    ghost.height = source.videoHeight || Math.round(rect.height);
+    try {
+      ghost.getContext('2d').drawImage(source, 0, 0, ghost.width, ghost.height);
+    } catch {
+      return null; // nothing decoded yet — skip the flourish rather than fly a black box
+    }
+  } else {
+    // Same gg:// URL, so the clone paints from cache without refetching.
+    ghost = source.cloneNode(true);
+  }
+
+  ghost.classList.add('ghost'); // add, don't replace — a cloned file icon keeps its own styling
+  ghost.style.left = `${rect.left}px`;
+  ghost.style.top = `${rect.top}px`;
+  ghost.style.width = `${rect.width}px`;
+  ghost.style.height = `${rect.height}px`;
+  document.body.appendChild(ghost);
+  return ghost;
+}
+
+// Start the landing flourish for a decision on `tile`. Motion is the confirmation,
+// so `message` is only toasted when we can't animate (reduced motion, nothing on
+// screen yet, or no tile to aim at) — otherwise a decision would be silent.
+function flyDecision(tile, message) {
+  const ghost = tile && !prefersReducedMotion.matches ? makeGhost() : null;
+  if (!ghost) {
+    toast(message);
+    return null;
+  }
+
+  const from = ghost.getBoundingClientRect();
+  const to = tile.getBoundingClientRect();
+  const dx = (to.left + to.width / 2) - (from.left + from.width / 2);
+  const dy = (to.top + to.height / 2) - (from.top + from.height / 2);
+  const scale = Math.min(to.width / from.width, to.height / from.height, 1);
+
+  const anim = ghost.animate(
+    [
+      { transform: 'translate(0, 0) scale(1)', opacity: 1 },
+      { transform: `translate(${dx}px, ${dy}px) scale(${scale})`, opacity: 0.15 },
+    ],
+    { duration: 260, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', fill: 'forwards' },
+  );
+
+  // .finished rejects with AbortError when cancelled; clean up either way, but only
+  // pulse the tile when the file actually landed there.
+  anim.finished.then(() => ghost.remove(), () => ghost.remove());
+  anim.finished.then(() => pulseTile(tile)).catch(() => {});
+  return anim;
+}
+
+function pulseTile(tile) {
+  if (!tile.isConnected) return; // the dock was re-rendered mid-flight
+  tile.classList.remove('pulse');
+  void tile.offsetWidth; // reflow, so back-to-back landings re-trigger the keyframes
+  tile.classList.add('pulse');
+  tile.addEventListener('animationend', () => tile.classList.remove('pulse'), { once: true });
+}
+
 // --- actions: move / keep ---
 
 function currentFile() {
@@ -281,10 +387,16 @@ async function moveCurrent(binding) {
   const file = currentFile();
   if (!file) return;
   acting = true;
+
+  // Fly before awaiting: a same-drive move is an instant rename, but a cross-drive
+  // move copies the bytes, which would otherwise freeze the UI on the old file.
+  const fly = flyDecision(tileEls.get(binding), `→ ${dirLabel(binding.dir)}`);
+
   let toPath;
   try {
     toPath = await api.moveFile(file.path, binding.dir);
   } catch (err) {
+    if (fly) fly.cancel(); // nothing landed — pull the ghost back off the screen
     if (err.message && err.message.includes('ENOENT')) {
       // Removed externally between listing and now — skip it (not a decision).
       allFiles = allFiles.filter((f) => f !== file);
@@ -299,7 +411,6 @@ async function moveCurrent(binding) {
   allFiles = allFiles.filter((f) => f !== file); // it's gone from this folder now
   markSorted(file.path);
   undoStack.push({ type: 'move', file, toPath, dir: folder });
-  toast(`→ ${dirLabel(binding.dir)}`);
   advanceAfterDecision(false);
   acting = false;
 }
@@ -307,9 +418,9 @@ async function moveCurrent(binding) {
 function keepCurrent() {
   const file = currentFile();
   if (!file) return;
+  flyDecision(tileEls.get('keep'), 'Kept');
   markSorted(file.path);
   undoStack.push({ type: 'keep', file });
-  toast('Kept');
   advanceAfterDecision(includeSorted); // if shown-when-sorted, the kept file stays → advance past it
 }
 
@@ -387,20 +498,27 @@ function keyDisplay(key) {
   return key.length === 1 ? key.toUpperCase() : key;
 }
 
+// Live tile elements, so a decision can find the tile to fly into. Keyed by the
+// binding object itself — key strings would need CSS-selector escaping (".", "[", …).
+const tileEls = new Map();
+
 // Render the folder dock: Keep pin tile, one tile per bound folder, then + Add.
 function renderDock() {
   dockTilesEl.replaceChildren();
+  tileEls.clear();
 
-  dockTilesEl.appendChild(makeTile({
+  const keepTile = makeTile({
     key: keepKey,
     label: 'Keep',
     variant: 'keep',
     capturing: !!capture && capture.type === 'rebind-keep',
     onRebind: startRebindKeep,
-  }));
+  });
+  tileEls.set('keep', keepTile);
+  dockTilesEl.appendChild(keepTile);
 
   for (const binding of bindings) {
-    dockTilesEl.appendChild(makeTile({
+    const tile = makeTile({
       key: binding.key,
       label: dirLabel(binding.dir),
       title: binding.dir,
@@ -410,7 +528,9 @@ function renderDock() {
       onOpen: () => openInExplorer(binding.dir),
       onSwap: () => startSwap(binding),
       onRemove: () => removeBinding(binding),
-    }));
+    });
+    tileEls.set(binding, tile);
+    dockTilesEl.appendChild(tile);
   }
 
   dockTilesEl.appendChild(makeAddTile());
@@ -636,12 +756,14 @@ window.addEventListener('keydown', (event) => {
 
   if (event.key === 'ArrowRight') {
     event.preventDefault();
+    navDir = 'next';
     index = Math.min(index + 1, files.length - 1);
     render();
     return;
   }
   if (event.key === 'ArrowLeft') {
     event.preventDefault();
+    navDir = 'prev';
     index = Math.max(index - 1, 0);
     render();
     return;
