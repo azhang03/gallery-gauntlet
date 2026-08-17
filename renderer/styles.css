@@ -50,9 +50,12 @@
   box-sizing: border-box;
 }
 
+/* Fixed height, not min-height: the panes below divide a definite space, so a tall
+   image scales down to fit instead of growing the page and scrolling the dock away. */
 body {
   margin: 0;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   font-family: "Segoe UI", system-ui, sans-serif;
@@ -68,6 +71,7 @@ body {
 
 /* --- Top bar --- */
 .topbar {
+  flex: none; /* fixed chrome — only the viewer and dock flex */
   display: flex;
   align-items: center;
   gap: var(--sp-3);
@@ -149,6 +153,7 @@ body {
 .viewer {
   flex: 3;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: var(--sp-5) var(--sp-4);
@@ -161,14 +166,16 @@ body {
   font-size: var(--fs-xl);
 }
 
-/* Column: media takes the leftover height, caption sits under it. Media is sized
-   against this pane (not the viewport) so a tall image can't spill over the dock. */
+/* Column: media takes the leftover height, caption sits under it. Every height in
+   this chain is flex-resolved rather than a percentage of an auto-height parent —
+   that's what lets the media's `max-height: 100%` actually resolve, so a big image
+   scales down to the pane instead of growing the page. */
 .file-view {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   width: 100%;
-  max-height: 100%;
   min-height: 0;
 }
 
